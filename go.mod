@@ -1,4 +1,4 @@
-module git@github.com/weblfe/queue-proxy
+module github.com/weblfe/queue-proxy
 
 go 1.15
 
