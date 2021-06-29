@@ -41,7 +41,7 @@ type (
 	QueueOption func(*queueOptions)
 
 	kafkaQueue struct {
-		c                KqConf
+		c                kafkaConf
 		consumer         *kafka.Reader
 		handler          ConsumeHandler
 		channel          chan kafka.Message
@@ -56,7 +56,7 @@ type (
 	}
 )
 
-func MustNewQueue(c KqConf, handler ConsumeHandler, opts ...QueueOption) queue.MessageQueue {
+func MustNewQueue(c kafkaConf, handler ConsumeHandler, opts ...QueueOption) queue.MessageQueue {
 	q, err := NewQueue(c, handler, opts...)
 	if err != nil {
 		log.Fatal(err)
@@ -65,7 +65,7 @@ func MustNewQueue(c KqConf, handler ConsumeHandler, opts ...QueueOption) queue.M
 	return q
 }
 
-func NewQueue(c KqConf, handler ConsumeHandler, opts ...QueueOption) (queue.MessageQueue, error) {
+func NewQueue(c kafkaConf, handler ConsumeHandler, opts ...QueueOption) (queue.MessageQueue, error) {
 	if err := c.SetUp(); err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func NewQueue(c KqConf, handler ConsumeHandler, opts ...QueueOption) (queue.Mess
 	return q, nil
 }
 
-func newKafkaQueue(c KqConf, handler ConsumeHandler, options queueOptions) queue.MessageQueue {
+func newKafkaQueue(c kafkaConf, handler ConsumeHandler, options queueOptions) queue.MessageQueue {
 	var offset int64
 	if c.Offset == firstOffset {
 		offset = kafka.FirstOffset
@@ -225,7 +225,7 @@ func (ch innerConsumeHandler) Consume(k, v string) error {
 	return ch.handle(k, v)
 }
 
-func ensureQueueOptions(c KqConf, options *queueOptions) {
+func ensureQueueOptions(c kafkaConf, options *queueOptions) {
 	if options.commitInterval == 0 {
 		options.commitInterval = defaultCommitInterval
 	}

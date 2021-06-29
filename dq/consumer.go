@@ -31,7 +31,7 @@ type (
 	}
 )
 
-func NewConsumer(c DqConf) Consumer {
+func NewConsumer(c BreakerConf) Consumer {
 	var nodes []*consumerNode
 	for _, node := range c.Beanstalks {
 		nodes = append(nodes, newConsumerNode(node.Endpoint, node.Tube))
