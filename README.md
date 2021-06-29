@@ -3,19 +3,21 @@
 项目 开发原因 : 各种队列服务 各种协议 各种队列客户端 复杂且不容易学习与维护 
 
 本项目 宗旨在 : 聚合 (常见:kafka,RabbitMQ,beanstalk,nsq) 消息队列系统, 使用redis 协议
+简单高效的接入 消息队列中间件
 
 > redis 协议依赖库
 
-```go
+```shell
 go get github.com/rfyiamcool/go_pubsub.git 
 go get github.com/realpeanut/peanutgredis.git
 ```
 
 > 队列 依赖库
 
-```go
+```shell
 go get github.com/tal-tech/go-queue
 ```
+
 
 > 项目计划
 
@@ -35,4 +37,4 @@ go get github.com/tal-tech/go-queue
 
  - [ ] v1.0.7 支持 webUI界面
 
- - [ ] v1.0.8  支持 clickhouse 存储
+ - [ ] v1.0.8  支持 influxDb
