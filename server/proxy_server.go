@@ -6,7 +6,7 @@ import (
 )
 
 type ProxyServer struct {
-	sync.Mutex
+	locker sync.Mutex
 	connsPool map[string]*net.TCPConn
 	entryPool map[string]interface{}
 }
