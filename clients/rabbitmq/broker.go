@@ -7,6 +7,8 @@ import (
 	"github.com/streadway/amqp"
 	"log"
 	"net"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,43 +16,51 @@ import (
 const (
 	MqPassEnvKey            = "RABBITMQ_USER_PASS"
 	MqLocaleEnvKey          = "RABBITMQ_PROXY_LOCALE"
-	defaultMqPass           = "guest"
 	defaultServer           = "127.0.0.1"
-	defaultVhost            = "/default"
+	defaultVhost            = "default"
+	defaultAuth             = "guest:guest"
+	defaultQueuePrefix      = "queue_"
 	defaultLocale           = "en_US"
 	defaultHearBeatDuration = 10 * time.Second
 	defaultDailNetworkTcp4  = "tcp4"
+	mqEnvKeyPrefix          = "RABBITMQ"
 )
 
-type Broker struct {
-	server     string
-	ssl        bool
-	vhost      string
-	userPass   string
-	certFile   string
-	keyFile    string
-	quePrefix  string
-	topics     []Topic
-	tlsConfig  *tls.Config
-	proxyAddr  string
-	heartbeat  time.Duration
-	locker     sync.RWMutex
-	connectors map[string]*amqp.Connection
-}
+type (
 
-type BrokerCfg struct {
-	Server    string        `json:"broker"`
-	Ssl       bool          `json:"ssl"`
-	Vhost     string        `json:"vhost"`
-	UserPass  string        `json:"user_pass,omitempty"`
-	Cert      string        `json:"cert_file,omitempty"`
-	Key       string        `json:"key_file,omitempty"`
-	QuePrefix string        `json:"queue_prefix,omitempty"`
-	ProxyAddr string        `json:"proxy_addr,omitempty"`
-	Heartbeat time.Duration `json:"heartbeat,default=10s"`
-	Topics    []TopicInfo   `json:"topics,omitempty"`
-}
+	// Broker 代理链接器工具类
+	Broker struct {
+		server     string
+		ssl        bool
+		vhost      string
+		userPass   string
+		certFile   string
+		keyFile    string
+		quePrefix  string
+		topics     []Topic
+		tlsConfig  *tls.Config
+		proxyAddr  string
+		heartbeat  time.Duration
+		locker     sync.RWMutex
+		connectors map[string]*amqp.Connection
+	}
 
+	// 代理链接配置
+	BrokerCfg struct {
+		Server    string        `json:"broker"`
+		Ssl       bool          `json:"ssl"`
+		Vhost     string        `json:"vhost"`
+		UserPass  string        `json:"user_pass,omitempty"`
+		Cert      string        `json:"cert_file,omitempty"`
+		Key       string        `json:"key_file,omitempty"`
+		QuePrefix string        `json:"queue_prefix,omitempty"`
+		ProxyAddr string        `json:"proxy_addr,omitempty"`
+		Heartbeat time.Duration `json:"heartbeat,default=10s"`
+		Topics    []TopicInfo   `json:"topics,omitempty"`
+	}
+)
+
+// 获取
 func CreateBroker(info *BrokerCfg) *Broker {
 	if info == nil {
 		return nil
@@ -58,9 +68,148 @@ func CreateBroker(info *BrokerCfg) *Broker {
 	return info.createBroker()
 }
 
-func (info *BrokerCfg) createBroker() *Broker {
+// 解析url
+func ParseUrlBrokerCfg(dns string) (*BrokerCfg, error) {
+	var cfg = &BrokerCfg{}
+	info, err := url.Parse(dns)
+	if err != nil {
+		return nil, err
+	}
+	if info.User != nil {
+		user := info.User.Username()
+		password, _ := info.User.Password()
+		cfg.UserPass = user + ":" + password
+	}
+	if strings.Contains(info.Scheme, "s") {
+		cfg.Ssl = true
+	}
+	cfg.Vhost = info.Path
+	cfg.Server = info.Host
+	if info.RawQuery != "" {
+		values, err := url.ParseQuery(info.RawQuery)
+		if err != nil {
+			return cfg, nil
+		}
+		// 通过参数设置
+		for k, v := range values {
+			num := len(v)
+			if num <= 0 {
+				continue
+			}
+			if num == 1 {
+				cfg.Set(k, v[0])
+			} else {
+				cfg.Set(k, v)
+			}
+		}
+	}
+	return cfg, nil
+}
+
+// 设置值
+func (cfg *BrokerCfg) Set(key string, v interface{}) *BrokerCfg {
+	switch v.(type) {
+	case string:
+		var str = v.(string)
+		switch key {
+		case "proxyAddr":
+			cfg.ProxyAddr = str
+		case "proxy_addr":
+			cfg.ProxyAddr = str
+		case "Vhost":
+			cfg.Vhost = str
+		case "vhost":
+			cfg.Vhost = str
+		case "UserPass":
+			cfg.UserPass = str
+		case "user_pass":
+			cfg.UserPass = str
+		case "certFile":
+			cfg.Cert = str
+		case "cert_file":
+			cfg.Cert = str
+		case "key_file":
+			cfg.Key = str
+		case "keyFile":
+			cfg.Key = str
+		case "QueuePrefix":
+			cfg.QuePrefix = str
+		case "queue_prefix":
+			cfg.QuePrefix = str
+		case "Heartbeat":
+			if d, err := time.ParseDuration(str); err == nil {
+				cfg.Heartbeat = d
+			}
+		case "heartbeat":
+			if d, err := time.ParseDuration(str); err == nil {
+				cfg.Heartbeat = d
+			}
+		}
+
+	case bool:
+		var b = v.(bool)
+		switch key {
+		case "ssl":
+			cfg.Ssl = b
+		case "ssl_on":
+			cfg.Ssl = b
+		}
+
+	case int64:
+		var d = v.(int64)
+		switch key {
+		case "Heartbeat":
+			cfg.Heartbeat = time.Duration(d)
+		case "heartbeat":
+			cfg.Heartbeat = time.Duration(d)
+		}
+	}
+
+	return cfg
+}
+
+func (cfg *BrokerCfg) createBroker() *Broker {
 	var broker = NewBroker()
-	return broker.SetByBrokerCfg(*info)
+	return broker.SetByBrokerCfg(*cfg)
+}
+
+// 同env 创建
+func CreateBrokerByEnv(namespace ...string) *Broker {
+	var info = GetBrokerInfoByEnv(namespace...)
+	return info.createBroker()
+}
+
+// 通过环境变成创建配置
+func GetBrokerInfoByEnv(namespace ...string) BrokerCfg {
+	namespace = append(namespace, "")
+	var (
+		topics = new([]TopicInfo)
+		info   = BrokerCfg{
+			Server:    GetByEnvOf(getKeyByNamespace("SERVER", namespace[0]), defaultServer),
+			UserPass:  GetByEnvOf(getKeyByNamespace("AUTH", namespace[0]), defaultAuth),
+			Vhost:     GetByEnvOf(getKeyByNamespace("VHOST", namespace[0]), defaultVhost),
+			Ssl:       GetBoolByEnvOf(getKeyByNamespace("SSL_ON", namespace[0]), false),
+			Cert:      GetByEnvOf(getKeyByNamespace("SSL_CERT_FILE", namespace[0]), ""),
+			Key:       GetByEnvOf(getKeyByNamespace("SSL_KEY_FILE", namespace[0]), ""),
+			QuePrefix: GetByEnvOf(getKeyByNamespace("QUEUE_PREFIX", namespace[0]), defaultQueuePrefix),
+			ProxyAddr: GetByEnvOf(getKeyByNamespace("PROXYADDR", namespace[0]), ""),
+			Heartbeat: GetDurationByEnvOf(getKeyByNamespace("HEARTBEAT_DURATION", namespace[0]), heartbeat),
+		}
+	)
+	if err := GetJsonByEnvBind(getKeyByNamespace("TOPICS", namespace[0]), topics); err == nil {
+		for _, v := range *topics {
+			info.Topics = append(info.Topics, v)
+		}
+	}
+	return info
+}
+
+// 通过命名前缀构建key
+func getKeyByNamespace(key string, namespace string) string {
+	if namespace == "" {
+		return strings.ToUpper(mqEnvKeyPrefix + "_" + key)
+	}
+	return strings.ToUpper(mqEnvKeyPrefix + "_" + namespace + "_" + key)
 }
 
 func (b *Broker) SetByBrokerCfg(info BrokerCfg) *Broker {
@@ -118,7 +267,7 @@ func (b *Broker) GetUserPass() string {
 	b.locker.RLocker().Lock()
 	defer b.locker.RUnlock()
 	if b.userPass == "" {
-		b.userPass = GetByEnvOf(MqPassEnvKey, defaultMqPass)
+		b.userPass = GetByEnvOf(MqPassEnvKey, defaultAuth)
 	}
 	return b.userPass
 }
@@ -132,6 +281,12 @@ func (b *Broker) GetProtocol() string {
 	return protocolAmqp
 }
 
+func (b *Broker) GetQueuePrefix() string {
+	b.locker.RLocker().Lock()
+	defer b.locker.RUnlock()
+	return b.quePrefix
+}
+
 func (b *Broker) GetConnector() (*amqp.Connection, error) {
 	if len(b.proxyAddr) > 0 {
 		return amqp.DialConfig(b.GetConnUrl(), b.getAmqpConfig())
@@ -140,22 +295,24 @@ func (b *Broker) GetConnector() (*amqp.Connection, error) {
 }
 
 func (b *Broker) GetConnection() *amqp.Connection {
-	var id = b.getHash()
-	b.locker.Lock()
-	defer b.locker.Unlock()
-	if conn, ok := b.connectors[id]; ok {
+	var id = b.getConnectorId()
+
+	conn, ok := b.connectors[id]
+	if ok && !conn.IsClosed() {
 		return conn
 	}
 	conn, err := b.GetConnector()
 	if err != nil {
-		log.Panicln("Broker.GetConnection.Error:", err.Error())
+		log.Panicln("[RABBITMQ_CLIENT_Broker] Broker.GetConnection.Error:", err.Error())
 		return nil
 	}
+	b.locker.Lock()
+	defer b.locker.Unlock()
 	b.connectors[id] = conn
 	return conn
 }
 
-func (b *Broker) getHash() string {
+func (b *Broker) getConnectorId() string {
 	return fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%s.%s.%v", b.GetConnUrl(), b.proxyAddr, b.ssl))))
 }
 
