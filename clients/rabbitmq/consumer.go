@@ -1,6 +1,7 @@
 package rabbitmq
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/streadway/amqp"
 	"log"
@@ -12,7 +13,8 @@ type (
 	SimpleQueueConsumer struct {
 		client         *Client
 		destructor     sync.Once
-		ch             chan MessageWrapper
+		constructor    sync.Once
+		ch             chan AckMessageWrapper
 		ctrl           chan bool
 		queueParams    *QueueParams
 		consumerParams *ConsumerParams
@@ -21,7 +23,7 @@ type (
 	}
 
 	Consumer interface {
-		Consume() chan<- MessageWrapper
+		Consume() <-chan AckMessageWrapper
 		Close() error
 		Subscribe() error
 	}
@@ -29,6 +31,12 @@ type (
 	MessageWrapper interface {
 		GetContent() []byte
 		GetRowMessage() interface{}
+		fmt.Stringer
+	}
+
+	AckMessageWrapper interface {
+		MessageWrapper
+		MessageReplier
 	}
 
 	AmqpMessageWrapper struct {
@@ -41,19 +49,20 @@ func NewSimpleQueueParams(name string) *QueueParams {
 	return &QueueParams{
 		Name:       name,
 		AutoDelete: false,
-		NoWait:     true,
+		NoWait:     false,
 		Exclusive:  false,
-		Durable:    false,
+		Durable:    true,
 		Args:       make(map[string]interface{}),
 	}
 }
 
 // NewSimpleConsumerParams 简单队列模式 默认 消费者参数
-func NewSimpleConsumerParams(name string) *ConsumerParams {
+func NewSimpleConsumerParams(name string, queue string) *ConsumerParams {
 	return &ConsumerParams{
 		Name:      name,
+		Queue:     queue,
 		AutoAck:   true,
-		NoWait:    true,
+		NoWait:    false,
 		Exclusive: false,
 		NoLocal:   false,
 		Args:      make(map[string]interface{}),
@@ -75,48 +84,95 @@ func (wrapper *AmqpMessageWrapper) GetContent() []byte {
 	return wrapper.rowData.Body
 }
 
+// String 转换成字符串
+func (wrapper *AmqpMessageWrapper) String() string {
+	return string(wrapper.GetContent())
+}
+
+// 解码
+func (wrapper *AmqpMessageWrapper) Decode(v interface{}) error {
+	if v == nil {
+		return fmt.Errorf("Decode.Error: Nil Pointer")
+	}
+	data := wrapper.GetContent()
+	if len(data) > 0 {
+		return json.Unmarshal(data, v)
+	}
+	return nil
+}
+
 // GetRowMessage 获取原始消息 对象
 func (wrapper *AmqpMessageWrapper) GetRowMessage() interface{} {
 	return wrapper.rowData
 }
 
+func (wrapper *AmqpMessageWrapper) Ack(multiple bool) error {
+	return Ack(wrapper, multiple)
+}
+
+func (wrapper *AmqpMessageWrapper) Reject(requeue bool) error {
+	return Reject(wrapper, requeue)
+}
+
+func (wrapper *AmqpMessageWrapper) Nack(multiple, requeue bool) error {
+	return Nack(wrapper, multiple, requeue)
+}
+
 func NewSimpleQueueConsumer(client *Client, queueParams *QueueParams, consumerParams *ConsumerParams) *SimpleQueueConsumer {
+	// 消费队列 和 定义队列必须一致
+	if consumerParams.Queue != "" {
+		queueParams.Name = consumerParams.Queue
+	}
+	// 消费者 tag
 	if consumerParams.Name == "" {
 		consumerParams.Name = fmt.Sprintf(queueParams.Name+".worker.%d", time.Now().Unix())
 	}
 	return &SimpleQueueConsumer{
 		client:         client,
 		destructor:     sync.Once{},
-		ch:             make(chan MessageWrapper, 10),
-		ctrl:           make(chan bool),
+		constructor:    sync.Once{},
 		queueParams:    queueParams,
+		ctrl:           make(chan bool),
 		consumerParams: consumerParams,
+		ch:             make(chan AckMessageWrapper, 10),
 	}
 }
 
 // Consume 获取消息消费队列
-func (Consumer *SimpleQueueConsumer) Consume() chan<- MessageWrapper {
+func (Consumer *SimpleQueueConsumer) Consume() <-chan AckMessageWrapper {
 	return Consumer.ch
 }
 
 // initQueue 初始化 队列
 func (Consumer *SimpleQueueConsumer) initQueue() error {
 	var (
-		err     error
-		queue   amqp.Queue
+		err   error
+		queue amqp.Queue
+	)
+	if Consumer.queue == nil {
+		Consumer.constructor.Do(func() {
+			queue, err = Consumer.Declare()
+			if err == nil {
+				Consumer.queue = &queue
+			}
+		})
+	}
+	return err
+}
+
+// Declare 声明队列
+func (Consumer *SimpleQueueConsumer) Declare() (amqp.Queue, error) {
+	var (
 		channel = Consumer.GetChannel()
 	)
-	queue, err = channel.QueueDeclare(
-		Consumer.queueParams.Name,
+	return channel.QueueDeclare(
+		Consumer.GetQueueName(),
 		Consumer.queueParams.Durable,
 		Consumer.queueParams.AutoDelete,
 		Consumer.queueParams.Exclusive,
-		Consumer.queueParams.NoWait, Consumer.queueParams.Args,
+		Consumer.queueParams.NoWait,
+		Consumer.queueParams.Args,
 	)
-	if err == nil {
-		Consumer.queue = &queue
-	}
-	return err
 }
 
 // GetChannel 获取 信道
@@ -136,48 +192,62 @@ func (Consumer *SimpleQueueConsumer) Subscribe() error {
 	if err != nil {
 		return err
 	}
+	// 限制投递数量
+	if err = Consumer.client.Qos(); err != nil {
+		return err
+	}
 	for {
 		select {
 		case msg := <-output:
 			Consumer.push(msg)
 		case v := <-Consumer.ctrl:
 			if v {
-				return nil
+				return Consumer.recycle()
 			}
 		}
 	}
 }
 
+// push 推到消费进程 channel
 func (Consumer *SimpleQueueConsumer) push(delivery amqp.Delivery) {
 	if len(Consumer.ch) >= cap(Consumer.ch) {
 		log.Println("[Consumer.Push ] Channel full")
-		// @todo
 	}
 	Consumer.ch <- NewMessageWrapper(delivery)
 }
 
+// recycle 回收
+func (Consumer *SimpleQueueConsumer) recycle() error {
+	if len(Consumer.ch) > 0 {
+		var queue = Consumer.GetQueueName()
+		for v := range Consumer.ch {
+			if v == nil {
+				continue
+			}
+			data := v.GetRowMessage()
+			if data == nil {
+				continue
+			}
+			if err := Consumer.client.SendQueue(queue,Consumer.queue.Name, data); err != nil {
+				log.Println("[Consumer.Save] Error:", err.Error(), "msg: ", data)
+			}
+		}
+	}
+	return nil
+}
+
+// 获取队列名
+func (Consumer *SimpleQueueConsumer) GetQueueName() string {
+	if Consumer.queueParams.Name != "" {
+		return Consumer.queueParams.Name
+	}
+	return Consumer.consumerParams.Queue
+}
+
+// 获取消息channel
 func (Consumer *SimpleQueueConsumer) getConsumer() (<-chan amqp.Delivery, error) {
-	if Consumer.output != nil {
-		return Consumer.output, nil
-	}
-	var ch = Consumer.GetChannel()
-	if ch == nil {
-		return nil, fmt.Errorf("[Consumer.Simple] %s", "Get Channel Failed")
-	}
-	var c, err = ch.Consume(
-		Consumer.queueParams.Name,
-		Consumer.consumerParams.Name,
-		Consumer.consumerParams.AutoAck,
-		Consumer.consumerParams.Exclusive,
-		Consumer.consumerParams.NoLocal,
-		Consumer.consumerParams.NoWait,
-		Consumer.consumerParams.Args,
-	)
-	if err != nil {
-		return nil, err
-	}
-	Consumer.output = c
-	return c, nil
+	Consumer.consumerParams.Queue = Consumer.GetQueueName()
+	return Consumer.client.Receive(*Consumer.consumerParams)
 }
 
 // Close 关闭订阅
@@ -185,11 +255,20 @@ func (Consumer *SimpleQueueConsumer) Close() error {
 	var err error
 	if Consumer.client != nil {
 		Consumer.destructor.Do(func() {
-			err = Consumer.client.Close()
-			Consumer.client = nil
+			// 通知关闭
 			Consumer.ctrl <- true
+			// 停止消费 并关闭
+			err = Consumer.client.Close()
 			Consumer.queue = nil
+			Consumer.client = nil
+			Consumer.queueParams = nil
+			Consumer.consumerParams = nil
 		})
 	}
 	return err
+}
+
+// Delete 删除队列
+func (Consumer *SimpleQueueConsumer) Delete() error {
+	return Consumer.client.DeleteQueue(*Consumer.queueParams)
 }

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	MqPassEnvKey            = "RABBITMQ_USER_PASS"
+	MqAuthEnvKey            = "RABBITMQ_AUTH"
 	MqLocaleEnvKey          = "RABBITMQ_PROXY_LOCALE"
 	defaultServer           = "127.0.0.1"
 	defaultVhost            = "default"
@@ -267,7 +267,7 @@ func (b *Broker) GetUserPass() string {
 	b.locker.RLocker().Lock()
 	defer b.locker.RUnlock()
 	if b.userPass == "" {
-		b.userPass = GetByEnvOf(MqPassEnvKey, defaultAuth)
+		b.userPass = GetByEnvOf(MqAuthEnvKey, defaultAuth)
 	}
 	return b.userPass
 }
