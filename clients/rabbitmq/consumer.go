@@ -228,7 +228,7 @@ func (Consumer *SimpleQueueConsumer) recycle() error {
 			if data == nil {
 				continue
 			}
-			if err := Consumer.client.SendQueue(queue,Consumer.queue.Name, data); err != nil {
+			if err := Consumer.client.SendToQueue(queue, Consumer.queue.Name, data); err != nil {
 				log.Println("[Consumer.Save] Error:", err.Error(), "msg: ", data)
 			}
 		}
@@ -269,6 +269,17 @@ func (Consumer *SimpleQueueConsumer) Close() error {
 }
 
 // Delete 删除队列
-func (Consumer *SimpleQueueConsumer) Delete() error {
-	return Consumer.client.DeleteQueue(*Consumer.queueParams)
+func (Consumer *SimpleQueueConsumer) Delete(opts ...func(params *DelParams)) error {
+	var params = DelParams{
+		Name: Consumer.GetQueueName(),
+	}
+	if len(opts) > 0 {
+		for _, setter := range opts {
+			if setter == nil {
+				continue
+			}
+			setter(&params)
+		}
+	}
+	return Consumer.client.DeleteQueue(params)
 }

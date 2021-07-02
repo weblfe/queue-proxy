@@ -155,7 +155,8 @@ func (clt *Client) Receive(params ConsumerParams) (<-chan amqp.Delivery, error) 
 	return c, nil
 }
 
-func (clt *Client) SendQueue(queue string, replyTo string, data interface{}) error {
+// SendToQueue 发送到队列
+func (clt *Client) SendToQueue(queue string, replyTo string, data interface{}) error {
 	var (
 		msg        []byte
 		params     *MessageParams
@@ -215,15 +216,22 @@ func (clt *Client) Qos(params ...*QosParams) error {
 }
 
 // 删除队列
-func (clt *Client) DeleteQueue(params QueueParams) error {
+func (clt *Client) DeleteQueue(params DelParams) error {
 	var ch = clt.GetChannel()
-	_, err := ch.QueueDeclare(
+	_, err := ch.QueueDelete(params.Name, params.IfUnused, params.IfEmpty, params.NoWait)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// 删除交换机
+func (clt *Client) DeleteExchange(params DelParams) error {
+	var ch = clt.GetChannel()
+	err := ch.ExchangeDelete(
 		params.Name,
-		params.Durable,
-		params.AutoDelete,
-		params.Exclusive,
+		params.IfUnused,
 		params.NoWait,
-		params.Args,
 	)
 	if err != nil {
 		return err

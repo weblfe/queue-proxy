@@ -202,3 +202,19 @@ func (Consumer *SubscribeConsumer) getConsumer() (<-chan amqp.Delivery, error) {
 	Consumer.consumerParams.Queue = Consumer.GetQueueName()
 	return Consumer.client.Receive(*Consumer.consumerParams)
 }
+
+// DeleteExchange 删除交换器
+func (Consumer *SubscribeConsumer) DeleteExchange(opts ...func(params *DelParams)) error {
+	var params = DelParams{
+		Name: Consumer.params.Exchange,
+	}
+	if len(opts) > 0 {
+		for _, setter := range opts {
+			if setter == nil {
+				continue
+			}
+			setter(&params)
+		}
+	}
+	return Consumer.client.DeleteExchange(params)
+}

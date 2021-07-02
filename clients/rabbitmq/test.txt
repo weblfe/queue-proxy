@@ -54,7 +54,8 @@ func (clt *Client) queInit(server *Broker, ifFresh bool) (err error) {
 	}
 
 	args := make(amqp.Table)
-	args["x-message-ttl"] = messageTTL
+	args["x-message-ttl"] =
+
 	args["x-expires"] = queueExpire
 	q, err := ch.QueueDeclare(
 		server.quePrefix+"."+clt.device, // name

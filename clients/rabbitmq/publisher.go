@@ -48,7 +48,7 @@ func (Publisher *SimpleQueuePublisher) Send(message MessageWrapper) error {
 		row   = message.GetRowMessage()
 		queue = Publisher.GetQueueName()
 	)
-	return Publisher.client.SendQueue(queue, Publisher.queue.Name, row)
+	return Publisher.client.SendToQueue(queue, Publisher.queue.Name, row)
 }
 
 // 发送消息

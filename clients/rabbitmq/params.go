@@ -11,7 +11,7 @@ import (
 
 type (
 
-	// QueueParams for mq createQueue 队列参数
+	// QueueParams for mq initQueue 队列参数
 	QueueParams struct {
 		Name         string                 `json:"name"`                 // 队列名
 		Durable      bool                   `json:"durable,omitempty"`    // 持久化
@@ -38,6 +38,7 @@ type (
 		Args         map[string]interface{} `json:"args,omitempty"`
 	}
 
+	// ExchangeParams for mq initExchange 参数
 	ExchangeParams struct {
 		Name       string                 `json:"name"`                     // Queue Name
 		Key        string                 `json:"key"`                      // Key
@@ -59,6 +60,7 @@ type (
 		Entry   string          // env 配置 实例对象命名空间
 	}
 
+	// 内部业务使用 MessageParams 发送消息参数
 	MessageParams struct {
 		Key       string          `json:"key,default=''"`                    // 队列
 		Exchange  string          `json:"exchange,default=''"`               // 交换机
@@ -67,10 +69,20 @@ type (
 		Msg       amqp.Publishing `json:"msg"`                               // 消息内容体
 	}
 
+	// DelParams 删除队列参数列表
+	DelParams struct {
+		Name     string `json:"name"`     // 队列名|交换器名
+		IfUnused bool   `json:"IfUnused"` // 是否未被使用
+		IfEmpty  bool   `json:"ifEmpty"`  // 是否空
+		NoWait   bool   `json:"noWait"`   // 不等待
+	}
+
+	// 外部业务使用  Message 纯消息体
 	Message struct {
 		rowData interface{}
 	}
 
+	// QosParams 控制消息投放量参数
 	QosParams struct {
 		PrefetchCount int
 		PrefetchSize  int
