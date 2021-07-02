@@ -27,8 +27,13 @@ func NewExchangeParams(exchange, tye string) *ExchangeParams {
 		Durable:    true,
 		AutoDelete: false,
 		Internal:   false,
-		Args:       make(map[string]interface{}),
+		Arguments:  Arguments{make(map[string]interface{})},
 	}
+}
+
+//  NewRoutingExchangeParams routing 模式 创建交换机参数
+func NewRoutingExchangeParams(exchange string) *ExchangeParams {
+	return NewExchangeParams(exchange, ExchangeTypeDirect)
 }
 
 // 自动 Ack
@@ -42,23 +47,24 @@ func NewSubscribeConsumerParams(tag, exchange, ty string) *ConsumerParams {
 		Exclusive:    false,
 		NoLocal:      false,
 		NoWait:       false,
-		Args:         make(map[string]interface{}),
+		Arguments:    Arguments{make(map[string]interface{})},
+	}
+}
+
+// 参数
+func ConsumerParamsOf() *ConsumerParams {
+	return &ConsumerParams{
+		AutoAck:   true, // 如需保障业务,设置成false
+		Exclusive: false,
+		NoLocal:   false,
+		NoWait:    false,
+		Arguments: Arguments{make(map[string]interface{})},
 	}
 }
 
 // 自己 Ack
 func NewSubscribeConsumerParamsAck(tag, exchange, ty string) *ConsumerParams {
-	return &ConsumerParams{
-		Name:         tag,
-		Queue:        "",
-		Exchange:     exchange,
-		ExchangeType: ty,
-		AutoAck:      false, // 如需保障业务,设置成false
-		Exclusive:    false,
-		NoLocal:      false,
-		NoWait:       false,
-		Args:         make(map[string]interface{}),
-	}
+	return NewSubscribeConsumerParams(tag, exchange, ty).SetBool("AutoAck", false)
 }
 
 // NewSubscribeQueueParams 定义模式队列模式 默认 队列参数
@@ -71,7 +77,7 @@ func NewSubscribeQueueParams(queue, exchange, ty string) *QueueParams {
 		NoWait:       false,
 		Exclusive:    false,
 		Durable:      true,
-		Args:         make(map[string]interface{}),
+		Arguments:    Arguments{make(map[string]interface{})},
 	}
 }
 
@@ -111,10 +117,8 @@ func (Consumer *SubscribeConsumer) Subscribe() error {
 		return err
 	}
 	// 初始化 定义队列
-	if Consumer.queue == nil {
-		if err := Consumer.initQueue(); err != nil {
-			return err
-		}
+	if err := Consumer.initQueue(); err != nil {
+		return err
 	}
 	// 获取消费队列channel
 	var output, err = Consumer.getConsumer()
@@ -186,7 +190,7 @@ func (Consumer *SubscribeConsumer) GetExchangeParams() ExchangeParams {
 		Type:       _type,
 		Exchange:   exchange,
 		NoWait:     Consumer.consumerParams.NoWait,
-		Args:       Consumer.consumerParams.Args,
+		Arguments:  Arguments{Consumer.consumerParams.Args},
 		Durable:    Consumer.queueParams.Durable,
 		AutoDelete: Consumer.queueParams.AutoDelete,
 	}

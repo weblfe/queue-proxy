@@ -30,16 +30,18 @@ func NewSimpleQueuePublisher(client *Client, queueParams *QueueParams) *SimpleQu
 	}
 }
 
+func (Publisher *SimpleQueuePublisher) GetBroker() *Broker {
+	return Publisher.client.GetBroker()
+}
+
 // 发送消息
 func (Publisher *SimpleQueuePublisher) Send(message MessageWrapper) error {
 	if Publisher.client.Closed() {
 		return fmt.Errorf("[Publisher] Client Connection Closed")
 	}
 	// 队列是否初始化
-	if Publisher.queue == nil {
-		if err := Publisher.initQueue(); err != nil {
-			return err
-		}
+	if err := Publisher.initQueue(); err != nil {
+		return err
 	}
 	if message == nil {
 		return fmt.Errorf("[Publisher] Client message is Nil")

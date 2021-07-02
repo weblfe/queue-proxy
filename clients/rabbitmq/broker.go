@@ -37,7 +37,6 @@ type (
 		certFile   string
 		keyFile    string
 		quePrefix  string
-		topics     []Topic
 		tlsConfig  *tls.Config
 		proxyAddr  string
 		heartbeat  time.Duration
@@ -56,7 +55,6 @@ type (
 		QuePrefix string        `json:"queue_prefix,omitempty"`
 		ProxyAddr string        `json:"proxy_addr,omitempty"`
 		Heartbeat time.Duration `json:"heartbeat,default=10s"`
-		Topics    []TopicInfo   `json:"topics,omitempty"`
 	}
 )
 
@@ -183,7 +181,6 @@ func CreateBrokerByEnv(namespace ...string) *Broker {
 func GetBrokerInfoByEnv(namespace ...string) BrokerCfg {
 	namespace = append(namespace, "")
 	var (
-		topics = new([]TopicInfo)
 		info   = BrokerCfg{
 			Server:    GetByEnvOf(getKeyByNamespace("SERVER", namespace[0]), defaultServer),
 			UserPass:  GetByEnvOf(getKeyByNamespace("AUTH", namespace[0]), defaultAuth),
@@ -196,11 +193,6 @@ func GetBrokerInfoByEnv(namespace ...string) BrokerCfg {
 			Heartbeat: GetDurationByEnvOf(getKeyByNamespace("HEARTBEAT_DURATION", namespace[0]), heartbeat),
 		}
 	)
-	if err := GetJsonByEnvBind(getKeyByNamespace("TOPICS", namespace[0]), topics); err == nil {
-		for _, v := range *topics {
-			info.Topics = append(info.Topics, v)
-		}
-	}
 	return info
 }
 
@@ -221,9 +213,6 @@ func (b *Broker) SetByBrokerCfg(info BrokerCfg) *Broker {
 	b.proxyAddr = info.ProxyAddr
 	b.quePrefix = info.QuePrefix
 	b.heartbeat = info.Heartbeat
-	for _, v := range info.Topics {
-		b.AddTopic(v.Create())
-	}
 	return b
 }
 
@@ -412,36 +401,6 @@ func (b *Broker) SetCert(certFile string) *Broker {
 	return b
 }
 
-func (b *Broker) AddTopic(topic Topic) *Broker {
-	b.locker.Lock()
-	defer b.locker.Unlock()
-	for _, v := range b.topics {
-		if v.Equal(topic) {
-			return b
-		}
-	}
-	b.topics = append(b.topics, topic)
-	return b
-}
-
-func (b *Broker) GetTopics() []Topic {
-	b.locker.RLocker().Lock()
-	defer b.locker.RUnlock()
-	return b.topics
-}
-
-func (b *Broker) RemoveTopic(topic Topic) *Broker {
-	b.locker.Lock()
-	defer b.locker.Unlock()
-	for i, v := range b.topics {
-		if v.Equal(topic) {
-			b.topics = append(b.topics[:i-1], b.topics[i:]...)
-			return b
-		}
-	}
-	return b
-}
-
 func (b *Broker) Close() error {
 	b.locker.Lock()
 	defer b.locker.Unlock()
@@ -453,7 +412,6 @@ func (b *Broker) Close() error {
 		}
 		delete(b.connectors, key)
 	}
-	b.topics = []Topic{}
 	return nil
 }
 

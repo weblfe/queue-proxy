@@ -2,7 +2,6 @@ package rabbitmq
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
@@ -13,25 +12,25 @@ import (
 
 const (
 	// beatChan = make(chan bool, 16)
-	beatTime             = time.Second * 30
-	heartbeat            = time.Second * 10
-	pubTime              = time.Second * 16
-	tickTime             = time.Second * 8
-	messageTTL           = int64(time.Hour / time.Millisecond)          // TTL for message in queue
-	queueExpire          = int64(time.Hour * 24 * 7 / time.Millisecond) // expire time for unused queue
-	protocolAmqp         = "amqp"
-	protocolAmqpSSL      = "amqps"
-	logTag               = "[RABBITMQ_CLIENT]"
-	defaultMsgTtl        = "18000" // half hour TTL for message in queue
-	defaultContentType   = "application/json"
-	defaultContentEncode = "UTF-8"
-	defaultPrefetchCount = 1
-	defaultPrefetchSize  = 0
-	ExchangeTypeDirect   = "direct"
-	ExchangeTypeFanOut   = "fanout"
-	ExchangeTypeTopic    = "topic"
-	ExchangeTypeHeader   = "header"
-	defaultQueueName     = "default"
+	heartbeat               = time.Second * 10
+	maxMsgTTL               = 366 * 24 * time.Hour // Year
+	protocolAmqp            = "amqp"
+	protocolAmqpSSL         = "amqps"
+	logTag                  = "[RABBITMQ_CLIENT]"
+	defaultMsgTtl           = "18000" // half hour TTL for message in queue
+	defaultContentType      = "application/json"
+	defaultContentEncode    = "UTF-8"
+	defaultPrefetchCount    = 1
+	defaultPrefetchSize     = 0
+	ExchangeTypeDirect      = "direct" // (直接交换)比fanout多加了一层密码限制(routingKey)
+	ExchangeTypeFanOut      = "fanout" // 广播
+	ExchangeTypeTopic       = "topic"  // 主题
+	ExchangeTypeHeader      = "header" // 首部
+	defaultQueueName        = "default"
+	defaultRoutingKey       = "default"
+	TopicMatchMultiWordFlag = "#" // 可以匹配多个单词（或者零个）
+	TopicMatchOneWordFlag   = "*" // 可以（只能）匹配一个单词
+	topicDefaultRoutingKey  = "*"
 )
 
 type (
@@ -39,6 +38,7 @@ type (
 	Client struct {
 		broker      *Broker
 		ch          *amqp.Channel
+		output      <-chan amqp.Delivery
 		destructor  sync.Once
 		constructor sync.Once
 		ctx         context.Context
@@ -71,6 +71,7 @@ func (clt *Client) Close() error {
 		err = clt.broker.Close()
 		clt.broker = nil
 		clt.ch = nil
+		clt.output = nil
 	})
 	return err
 }
@@ -136,6 +137,9 @@ func (clt *Client) Send(params MessageParams) error {
 
 // Receive 接收
 func (clt *Client) Receive(params ConsumerParams) (<-chan amqp.Delivery, error) {
+	if clt.output != nil {
+		return clt.output, nil
+	}
 	var ch = clt.GetChannel()
 	if ch == nil {
 		return nil, fmt.Errorf("[RABBITMQ_CLIENT] Error: Channel missing")
@@ -152,49 +156,17 @@ func (clt *Client) Receive(params ConsumerParams) (<-chan amqp.Delivery, error) 
 	if err != nil {
 		return nil, err
 	}
+	clt.output = c
 	return c, nil
 }
 
 // SendToQueue 发送到队列
 func (clt *Client) SendToQueue(queue string, replyTo string, data interface{}) error {
-	var (
-		msg        []byte
-		params     *MessageParams
-		publishing *amqp.Publishing
-	)
+	var params *MessageParams
 	if data == nil {
 		return fmt.Errorf("[RABBITMQ_CLIENT] data nil")
 	}
-	switch data.(type) {
-	case amqp.Delivery:
-		msg = data.(amqp.Delivery).Body
-	case []byte:
-		msg = data.([]byte)
-	case string:
-		msg = []byte(data.(string))
-	case amqp.Publishing:
-		m := data.(amqp.Publishing)
-		publishing = &m
-	case fmt.Stringer:
-		msg = []byte(data.(fmt.Stringer).String())
-	}
-	if msg != nil {
-		p := NewSimpleQueueMessageParam(queue, msg)
-		params = &p
-	}
-	if publishing != nil {
-		p := NewSimpleQueueMessageParam(queue, nil)
-		p.Msg = *publishing
-		params = &p
-	}
-	if params == nil {
-		b, err := json.Marshal(data)
-		if err != nil {
-			return fmt.Errorf("[RABBITMQ_CLIENT] Type Error: %T,%v ,%s", data, data, err.Error())
-		}
-		p := NewSimpleQueueMessageParam(queue, b)
-		params = &p
-	}
+	params = MessageParamsOf("", queue, data)
 	params.Msg.ReplyTo = replyTo
 	return clt.Send(*params)
 }

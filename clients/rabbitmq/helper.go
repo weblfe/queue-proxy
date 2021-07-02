@@ -132,6 +132,7 @@ func CreatePublishing(data interface{}) amqp.Publishing {
 	var msg = amqp.Publishing{
 		Body:            nil,
 		Expiration:      defaultMsgTtl,
+		DeliveryMode:    amqp.Persistent, // 默认持久化
 		ContentEncoding: defaultContentEncode,
 		ContentType:     defaultContentType,
 		Timestamp:       time.Now(),
@@ -146,22 +147,10 @@ func CreatePublishing(data interface{}) amqp.Publishing {
 		msg = *data.(*amqp.Publishing)
 	case amqp.Delivery:
 		m := data.(amqp.Delivery)
-		msg.Body = m.Body
-		if m.ContentType != "" {
-			msg.ContentType = m.ContentType
-		}
-		if m.ContentEncoding != "" {
-			msg.ContentEncoding = m.ContentEncoding
-		}
+		msg = DeliveryToPublishing(m)
 	case *amqp.Delivery:
 		m := data.(*amqp.Delivery)
-		msg.Body = m.Body
-		if m.ContentType != "" {
-			msg.ContentType = m.ContentType
-		}
-		if m.ContentEncoding != "" {
-			msg.ContentEncoding = m.ContentEncoding
-		}
+		msg = DeliveryToPublishing(*m)
 	case string:
 		msg.Body = []byte(data.(string))
 	case []byte:
@@ -199,15 +188,96 @@ func messageParamsFor(data interface{}) *MessageParams {
 		if err := json.Unmarshal(data.([]byte), msg); err == nil {
 			return msg
 		}
+	case amqp.Publishing:
+		return &MessageParams{
+			Msg: data.(amqp.Publishing),
+		}
+	case *amqp.Publishing:
+		return &MessageParams{
+			Msg: *data.(*amqp.Publishing),
+		}
+	case amqp.Delivery:
+		var d = data.(amqp.Delivery)
+		return &MessageParams{
+			Msg: DeliveryToPublishing(d),
+		}
+	case *amqp.Delivery:
+		var d = *data.(*amqp.Delivery)
+		return &MessageParams{
+			Msg: DeliveryToPublishing(d),
+		}
 	}
 	return nil
 }
 
-func inTypeArray(t string) bool {
+func DeliveryToPublishing(d amqp.Delivery) amqp.Publishing {
+	return amqp.Publishing{
+		Body:            d.Body,
+		Type:            d.Type,
+		Expiration:      d.Expiration,
+		Priority:        d.Priority,
+		ContentEncoding: d.ContentEncoding,
+		ContentType:     d.ContentType,
+		DeliveryMode:    d.DeliveryMode,
+		Headers:         d.Headers,
+		MessageId:       d.MessageId,
+		AppId:           d.AppId,
+		UserId:          d.UserId,
+		Timestamp:       time.Now(),
+	}
+}
+
+// CheckTypeArray 检查是否交换机 支持的类型
+func CheckTypeArray(t string) bool {
 	for _, v := range []string{ExchangeTypeDirect, ExchangeTypeFanOut, ExchangeTypeTopic, ExchangeTypeHeader} {
 		if v == t {
 			return true
 		}
 	}
 	return false
+}
+
+// 数组去重
+func ArrayUnique(arr []string) (newArr []string) {
+	newArr = make([]string, 0)
+	for i := 0; i < len(arr); i++ {
+		repeat := false
+		for j := i + 1; j < len(arr); j++ {
+			if arr[i] == arr[j] {
+				repeat = true
+				break
+			}
+		}
+		if !repeat {
+			newArr = append(newArr, arr[i])
+		}
+	}
+	return
+}
+
+// 获取AMQP消息
+func MessageForDelivery(msg MessageWrapper) *amqp.Delivery {
+	var data = msg.GetRowMessage()
+	switch data.(type) {
+	case amqp.Delivery:
+		var d = data.(amqp.Delivery)
+		return &d
+	case *amqp.Delivery:
+		return data.(*amqp.Delivery)
+	}
+	return nil
+}
+
+func GetBroker(p Publisher) *Broker {
+	switch p.(type) {
+	case *SimpleQueuePublisher:
+		return p.(*SimpleQueuePublisher).GetBroker()
+	case *PublishPublisher:
+		return p.(*PublishPublisher).GetBroker()
+	case *RoutingPublisher:
+		return p.(*RoutingPublisher).GetBroker()
+	case *TopicPublisher:
+		return p.(*TopicPublisher).GetBroker()
+	}
+	return nil
 }

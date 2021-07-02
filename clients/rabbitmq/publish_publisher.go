@@ -24,7 +24,7 @@ func NewPublishPublisher(client *Client, params *ExchangeParams) *PublishPublish
 		AutoDelete:   params.AutoDelete,
 		Exclusive:    params.Exclusive,
 		NoWait:       params.NoWait,
-		Args:         params.Args,
+		Arguments:    Arguments{params.Args},
 	}
 	return &PublishPublisher{
 		SimpleQueuePublisher: SimpleQueuePublisher{
@@ -52,6 +52,8 @@ func (Publisher *PublishPublisher) Send(message MessageWrapper) error {
 	}
 	// 是否 msg params
 	if msg := messageParamsFor(message); msg != nil {
+		msg.Key = ""
+		msg.Exchange = Publisher.GetExchangeName()
 		return Publisher.client.Send(*msg)
 	}
 	// 构造 消息参数体
@@ -102,4 +104,19 @@ func (Publisher *PublishPublisher) Close() error {
 	err = Publisher.SimpleQueuePublisher.Close()
 	Publisher.params = nil
 	return err
+}
+
+// DeleteExchange 删除 交换机
+func (Publisher *PublishPublisher) DeleteExchange(opts ...func(params *DelParams)) error {
+	var params = DelParams{}
+	if len(opts) > 0 {
+		for _, setter := range opts {
+			if setter == nil {
+				continue
+			}
+			setter(&params)
+		}
+	}
+	params.Name = Publisher.GetExchangeName()
+	return Publisher.client.DeleteExchange(params)
 }

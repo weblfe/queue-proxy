@@ -20,6 +20,7 @@ type (
 		consumerParams *ConsumerParams
 		queue          *amqp.Queue
 		output         <-chan amqp.Delivery
+		qosOn          bool
 	}
 
 	Consumer interface {
@@ -52,7 +53,7 @@ func NewSimpleQueueParams(name string) *QueueParams {
 		NoWait:     false,
 		Exclusive:  false,
 		Durable:    true,
-		Args:       make(map[string]interface{}),
+		Arguments:  Arguments{make(map[string]interface{})},
 	}
 }
 
@@ -65,7 +66,7 @@ func NewSimpleConsumerParams(name string, queue string) *ConsumerParams {
 		NoWait:    false,
 		Exclusive: false,
 		NoLocal:   false,
-		Args:      make(map[string]interface{}),
+		Arguments: Arguments{make(map[string]interface{})},
 	}
 }
 
@@ -160,6 +161,10 @@ func (Consumer *SimpleQueueConsumer) initQueue() error {
 	return err
 }
 
+func (Consumer *SimpleQueueConsumer) SetQos(o bool) {
+	Consumer.qosOn = o
+}
+
 // Declare 声明队列
 func (Consumer *SimpleQueueConsumer) Declare() (amqp.Queue, error) {
 	var (
@@ -182,19 +187,20 @@ func (Consumer *SimpleQueueConsumer) GetChannel() *amqp.Channel {
 
 // Subscribe 订阅processor 启动函数
 func (Consumer *SimpleQueueConsumer) Subscribe() error {
-	if Consumer.queue == nil {
-		if err := Consumer.initQueue(); err != nil {
-			return err
-		}
+	// 检查队列是否初始化
+	if err := Consumer.initQueue(); err != nil {
+		return err
 	}
 	// 获取消费队列channel
 	var output, err = Consumer.getConsumer()
 	if err != nil {
 		return err
 	}
-	// 限制投递数量
-	if err = Consumer.client.Qos(); err != nil {
-		return err
+	// 是开启 限制投递数量
+	if Consumer.qosOn {
+		if err = Consumer.client.Qos(); err != nil {
+			return err
+		}
 	}
 	for {
 		select {
