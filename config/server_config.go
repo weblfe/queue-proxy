@@ -1,6 +1,6 @@
 package config
 
-// 服务配置
+// ServerConfig 服务配置
 type ServerConfig struct {
 	TcpServCfg   TCPServerConfig               // 代理服务tcp server 配置
 	ApiServCfg   *HttpServerConfig             // API 服务配置
@@ -13,7 +13,7 @@ type ServerConfig struct {
 	AppType      string                        // 应用服务类型
 }
 
-// 日志配置
+// LoggerEntry 日志配置
 type LoggerEntry struct {
 	Driver        StorageDriver
 	Level         string   // 日志level
@@ -21,42 +21,42 @@ type LoggerEntry struct {
 	Format        string   // 格式化
 }
 
-// tcp 服务配置
+// TCPServerConfig tcp 服务配置
 type TCPServerConfig struct {
 	Addr string
 }
 
-// http 接口服务
+// HttpServerConfig http 接口服务
 type HttpServerConfig struct {
 	Addr string
 }
 
-// grpc 服务
+// GrpcServerConfig grpc 服务
 type GrpcServerConfig struct {
 	Addr string
 }
 
-// webSocket 服务
+// WebSocketConfig webSocket 服务
 type WebSocketConfig struct {
 	Addr    string
 	Options map[string]interface{}
 }
 
-// 用户
+// User 用户
 type User struct {
 	User     string
 	Password string
 	Role     string
 }
 
-// 队列配置
+// QueueDriverEntry 队列配置
 type QueueDriverEntry struct {
 	Driver  QueueDriver
 	Addr    string
 	Options map[string]interface{}
 }
 
-// 存储配置
+// StorageDriverEntry 存储配置
 type StorageDriverEntry struct {
 	Driver  StorageDriver
 	ConnUrl string

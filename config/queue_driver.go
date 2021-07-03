@@ -1,6 +1,6 @@
 package config
 
-// 队列驱动
+// QueueDriver 队列驱动
 type QueueDriver string
 
 const (
@@ -9,4 +9,5 @@ const (
 	DriverBeanstalk QueueDriver = "beanstalk"
 	DriverNsq       QueueDriver = "nsq"
 	DriverNats      QueueDriver = "nats"
+	DriverRabbitmq  QueueDriver = "rabbitmq"
 )

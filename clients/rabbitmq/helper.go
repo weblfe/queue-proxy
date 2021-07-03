@@ -219,6 +219,8 @@ func DeliveryToPublishing(d amqp.Delivery) amqp.Publishing {
 		ContentEncoding: d.ContentEncoding,
 		ContentType:     d.ContentType,
 		DeliveryMode:    d.DeliveryMode,
+		ReplyTo:         d.ReplyTo,
+		CorrelationId:   d.CorrelationId,
 		Headers:         d.Headers,
 		MessageId:       d.MessageId,
 		AppId:           d.AppId,
@@ -237,7 +239,7 @@ func CheckTypeArray(t string) bool {
 	return false
 }
 
-// 数组去重
+// ArrayUnique 数组去重
 func ArrayUnique(arr []string) (newArr []string) {
 	newArr = make([]string, 0)
 	for i := 0; i < len(arr); i++ {
@@ -255,7 +257,7 @@ func ArrayUnique(arr []string) (newArr []string) {
 	return
 }
 
-// 获取AMQP消息
+// MessageForDelivery 获取AMQP消息
 func MessageForDelivery(msg MessageWrapper) *amqp.Delivery {
 	var data = msg.GetRowMessage()
 	switch data.(type) {
@@ -268,6 +270,7 @@ func MessageForDelivery(msg MessageWrapper) *amqp.Delivery {
 	return nil
 }
 
+// GetBroker 获取链接
 func GetBroker(p Publisher) *Broker {
 	switch p.(type) {
 	case *SimpleQueuePublisher:
