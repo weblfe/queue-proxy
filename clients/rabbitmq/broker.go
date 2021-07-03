@@ -44,7 +44,7 @@ type (
 		connectors map[string]*amqp.Connection
 	}
 
-	// 代理链接配置
+	// BrokerCfg 代理链接配置
 	BrokerCfg struct {
 		Server    string        `json:"broker"`
 		Ssl       bool          `json:"ssl"`
@@ -58,7 +58,7 @@ type (
 	}
 )
 
-// 获取
+// CreateBroker 通过配置创建链接器
 func CreateBroker(info *BrokerCfg) *Broker {
 	if info == nil {
 		return nil
@@ -66,7 +66,7 @@ func CreateBroker(info *BrokerCfg) *Broker {
 	return info.createBroker()
 }
 
-// 解析url
+// ParseUrlBrokerCfg 解析url创建链接参数
 func ParseUrlBrokerCfg(dns string) (*BrokerCfg, error) {
 	var cfg = &BrokerCfg{}
 	info, err := url.Parse(dns)
@@ -104,7 +104,7 @@ func ParseUrlBrokerCfg(dns string) (*BrokerCfg, error) {
 	return cfg, nil
 }
 
-// 设置值
+// Set 设置值
 func (cfg *BrokerCfg) Set(key string, v interface{}) *BrokerCfg {
 	switch v.(type) {
 	case string:
@@ -171,13 +171,13 @@ func (cfg *BrokerCfg) createBroker() *Broker {
 	return broker.SetByBrokerCfg(*cfg)
 }
 
-// 同env 创建
+// CreateBrokerByEnv 通过env 创建 连接器
 func CreateBrokerByEnv(namespace ...string) *Broker {
 	var info = GetBrokerInfoByEnv(namespace...)
 	return info.createBroker()
 }
 
-// 通过环境变成创建配置
+// GetBrokerInfoByEnv 通过环境变成创建配置
 func GetBrokerInfoByEnv(namespace ...string) BrokerCfg {
 	namespace = append(namespace, "")
 	var (
